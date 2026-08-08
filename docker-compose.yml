@@ -44,7 +44,7 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    environment:
+    environment: &collector-env
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
@@ -52,7 +52,21 @@ services:
       DB_PORT: "5432"
       SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
       OI_POLL_INTERVAL: ${OI_POLL_INTERVAL:-15}
+      ORDERBOOK_SNAPSHOT_INTERVAL: ${ORDERBOOK_SNAPSHOT_INTERVAL:-1}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+  orderbook-collector:
+    build:
+      context: .
+      dockerfile: collectors/Dockerfile
+    command: ["python", "-m", "collectors.orderbook"]
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: *collector-env
 
 volumes:
   timescale_data:

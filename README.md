@@ -2,7 +2,7 @@
 
 Market-data collection + research infrastructure. See [CLAUDE.md](CLAUDE.md) for the full project charter, hard rules, and milestones.
 
-**Current state:** TimescaleDB schema + Binance perps collector (trades, liquidations, funding/mark price, open interest). Bybit, orderbook, and Polymarket collectors are next.
+**Current state:** TimescaleDB schema + Binance perps collectors: trades, liquidations, funding/mark price, open interest (`binance-collector`) and 1s L2 orderbook snapshots (`orderbook-collector`). Bybit and Polymarket collectors are next.
 
 ## Quickstart
 

@@ -2,7 +2,17 @@
 
 Market-data collection + research infrastructure. See [CLAUDE.md](CLAUDE.md) for the full project charter, hard rules, and milestones.
 
-**Current state:** TimescaleDB schema + Binance perps collectors: trades, liquidations, funding/mark price, open interest (`binance-collector`) and 1s L2 orderbook snapshots (`orderbook-collector`). Bybit and Polymarket collectors are next.
+**Current state:** all Milestone 1 components built — pending live shakedown on the VPS.
+
+| Service | What it collects |
+|---|---|
+| `binance-collector` | Binance perps: trades, liquidations, funding/mark (1s), open interest |
+| `orderbook-collector` | Binance L2 top-20 snapshots at 1s |
+| `bybit-collector` | Bybit perps: trades, liquidations, funding/mark (1s), open interest |
+| `bybit-orderbook-collector` | Bybit L2 top-20 snapshots at 1s (delta-maintained book) |
+| `polymarket-collector` | Gamma markets (top-N), global fills feed, watchlist position snapshots |
+| `health-monitor` | Polls `dead_collectors`, alerts via `ALERT_WEBHOOK_URL` on death/recovery |
+| `parquet-export` | Daily per-table Parquet files to `./data/parquet/`, tracked in `export_log` |
 
 ## Quickstart
 

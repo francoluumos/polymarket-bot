@@ -24,15 +24,26 @@ class ReconnectingWS:
         handler,
         on_gap=None,
         max_conn_age: float = 23 * 3600,  # Binance force-closes at 24h; rotate early
+        on_connect=None,          # async fn(ws), e.g. send a subscribe frame
+        keepalive_payload: str | None = None,  # app-level ping (Bybit wants {"op":"ping"})
+        keepalive_interval: float = 20.0,
     ):
         self.name = name
         self.url = url
         self.handler = handler
         self.on_gap = on_gap
         self.max_conn_age = max_conn_age
+        self.on_connect = on_connect
+        self.keepalive_payload = keepalive_payload
+        self.keepalive_interval = keepalive_interval
         self.msg_count = 0
         self.last_msg_at: datetime | None = None
         self.connected = False
+
+    async def _keepalive(self, ws) -> None:
+        while True:
+            await asyncio.sleep(self.keepalive_interval)
+            await ws.send(self.keepalive_payload)
 
     async def run(self) -> None:
         backoff = 1.0
@@ -46,6 +57,8 @@ class ReconnectingWS:
                 ) as ws:
                     self.connected = True
                     log.info("[%s] connected", self.name)
+                    if self.on_connect is not None:
+                        await self.on_connect(ws)
                     if disconnected_at is not None and self.on_gap is not None:
                         await self.on_gap(
                             disconnected_at, datetime.now(timezone.utc), disconnect_reason
@@ -53,17 +66,24 @@ class ReconnectingWS:
                     disconnected_at = None
                     backoff = 1.0
                     connected_mono = time.monotonic()
-
-                    async for raw in ws:
-                        self.msg_count += 1
-                        self.last_msg_at = datetime.now(timezone.utc)
-                        await self.handler(raw)
-                        if time.monotonic() - connected_mono > self.max_conn_age:
-                            disconnect_reason = "planned rotation (max connection age)"
-                            log.info("[%s] rotating connection", self.name)
-                            break
-                    else:
-                        disconnect_reason = "server closed connection"
+                    ka_task = (
+                        asyncio.create_task(self._keepalive(ws))
+                        if self.keepalive_payload else None
+                    )
+                    try:
+                        async for raw in ws:
+                            self.msg_count += 1
+                            self.last_msg_at = datetime.now(timezone.utc)
+                            await self.handler(raw)
+                            if time.monotonic() - connected_mono > self.max_conn_age:
+                                disconnect_reason = "planned rotation (max connection age)"
+                                log.info("[%s] rotating connection", self.name)
+                                break
+                        else:
+                            disconnect_reason = "server closed connection"
+                    finally:
+                        if ka_task is not None:
+                            ka_task.cancel()
             except asyncio.CancelledError:
                 raise
             except Exception as e:

@@ -68,5 +68,85 @@ services:
         condition: service_completed_successfully
     environment: *collector-env
 
+  bybit-collector:
+    build:
+      context: .
+      dockerfile: collectors/Dockerfile
+    command: ["python", "-m", "collectors.bybit_ws"]
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: *collector-env
+
+  bybit-orderbook-collector:
+    build:
+      context: .
+      dockerfile: collectors/Dockerfile
+    command: ["python", "-m", "collectors.bybit_orderbook"]
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: *collector-env
+
+  polymarket-collector:
+    build:
+      context: .
+      dockerfile: collectors/Dockerfile
+    command: ["python", "-m", "collectors.polymarket"]
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *collector-env
+      PM_TOP_MARKETS: ${PM_TOP_MARKETS:-100}
+      PM_FILLS_INTERVAL: ${PM_FILLS_INTERVAL:-10}
+      PM_MARKETS_INTERVAL: ${PM_MARKETS_INTERVAL:-300}
+      PM_POSITIONS_INTERVAL: ${PM_POSITIONS_INTERVAL:-300}
+      WATCH_WALLETS: ${WATCH_WALLETS:-}
+
+  health-monitor:
+    build:
+      context: .
+      dockerfile: collectors/Dockerfile
+    command: ["python", "-m", "collectors.healthmon"]
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *collector-env
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      HEALTH_CHECK_INTERVAL: ${HEALTH_CHECK_INTERVAL:-60}
+      REALERT_MINUTES: ${REALERT_MINUTES:-30}
+
+  parquet-export:
+    build:
+      context: .
+      dockerfile: storage/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *collector-env
+      EXPORT_DIR: /data/parquet
+      EXPORT_BACKFILL_DAYS: ${EXPORT_BACKFILL_DAYS:-3}
+      EXPORT_CHECK_INTERVAL: ${EXPORT_CHECK_INTERVAL:-3600}
+    volumes:
+      - ./data/parquet:/data/parquet
+
 volumes:
   timescale_data:

@@ -1,0 +1,10 @@
+# Migration runner image. Migrations are baked in rather than bind-mounted:
+# the Hostinger Docker manager deploys only the compose file to the project
+# directory (the repo clone used for builds is a temp dir), so `./storage`
+# does not exist on the host at runtime.
+FROM timescale/timescaledb:2.17.2-pg16
+
+COPY storage/migrate.sh /storage/migrate.sh
+COPY storage/migrations /storage/migrations
+
+ENTRYPOINT ["/bin/sh", "/storage/migrate.sh"]

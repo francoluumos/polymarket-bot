@@ -1,0 +1,168 @@
+# VPS deployment compose for the Hostinger Docker manager.
+#
+# The Docker manager deploys only this file into /docker/<project>/ — the
+# repo tree is NOT present on the host at runtime. Therefore every service
+# builds from a git URL context (BuildKit clones the repo itself, which also
+# supports branch names containing slashes, unlike the manager's /tree/ URL
+# parsing) and nothing bind-mounts repo files.
+#
+# Redeploy by pointing the Docker manager at the raw URL of this file.
+
+x-git-context: &git-context https://github.com/francoluumos/polymarket-bot.git#claude/polymarket-bot-vps-deploy-pn9dj4
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:2.17.2-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Cap timescaledb-tune so Postgres doesn't size itself to the whole
+      # VPS — it shares the box with other Docker workloads.
+      TS_TUNE_MEMORY: ${TS_TUNE_MEMORY:-2GB}
+      TS_TUNE_NUM_CPUS: ${TS_TUNE_NUM_CPUS:-2}
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    ports:
+      # Bound to localhost: research notebooks connect via SSH tunnel on the VPS.
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    shm_size: 512mb
+
+  migrate:
+    build:
+      context: *git-context
+      dockerfile: storage/Dockerfile.migrate
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DB_HOST: timescaledb
+    restart: "no"
+
+  binance-collector:
+    build:
+      context: *git-context
+      dockerfile: collectors/Dockerfile
+    command: ["python", "-m", "collectors.binance_ws"]
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: &collector-env
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DB_HOST: timescaledb
+      DB_PORT: "5432"
+      SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
+      OI_POLL_INTERVAL: ${OI_POLL_INTERVAL:-15}
+      ORDERBOOK_SNAPSHOT_INTERVAL: ${ORDERBOOK_SNAPSHOT_INTERVAL:-1}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+  orderbook-collector:
+    build:
+      context: *git-context
+      dockerfile: collectors/Dockerfile
+    command: ["python", "-m", "collectors.orderbook"]
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: *collector-env
+
+  bybit-collector:
+    build:
+      context: *git-context
+      dockerfile: collectors/Dockerfile
+    command: ["python", "-m", "collectors.bybit_ws"]
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: *collector-env
+
+  bybit-orderbook-collector:
+    build:
+      context: *git-context
+      dockerfile: collectors/Dockerfile
+    command: ["python", "-m", "collectors.bybit_orderbook"]
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: *collector-env
+
+  polymarket-collector:
+    build:
+      context: *git-context
+      dockerfile: collectors/Dockerfile
+    command: ["python", "-m", "collectors.polymarket"]
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *collector-env
+      PM_TOP_MARKETS: ${PM_TOP_MARKETS:-100}
+      PM_FILLS_INTERVAL: ${PM_FILLS_INTERVAL:-10}
+      PM_MARKETS_INTERVAL: ${PM_MARKETS_INTERVAL:-300}
+      PM_POSITIONS_INTERVAL: ${PM_POSITIONS_INTERVAL:-300}
+      WATCH_WALLETS: ${WATCH_WALLETS:-}
+
+  health-monitor:
+    build:
+      context: *git-context
+      dockerfile: collectors/Dockerfile
+    command: ["python", "-m", "collectors.healthmon"]
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *collector-env
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      HEALTH_CHECK_INTERVAL: ${HEALTH_CHECK_INTERVAL:-60}
+      REALERT_MINUTES: ${REALERT_MINUTES:-30}
+
+  parquet-export:
+    build:
+      context: *git-context
+      dockerfile: storage/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *collector-env
+      EXPORT_DIR: /data/parquet
+      EXPORT_BACKFILL_DAYS: ${EXPORT_BACKFILL_DAYS:-3}
+      EXPORT_CHECK_INTERVAL: ${EXPORT_CHECK_INTERVAL:-3600}
+    volumes:
+      # Relative to /docker/<project>/ on the VPS; Docker creates it on first run.
+      - ./data/parquet:/data/parquet
+
+volumes:
+  timescale_data:

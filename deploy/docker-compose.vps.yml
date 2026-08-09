@@ -35,9 +35,10 @@ services:
     shm_size: 512mb
 
   migrate:
-    build:
-      context: *git-context
-      dockerfile: storage/Dockerfile.migrate
+    # No custom image: the Docker manager's inline-YAML flow runs `pull` +
+    # `up` but never `build`, so migrate fetches the branch tarball at start
+    # and runs migrate.sh from it. Migrations stay single-sourced in git.
+    image: timescale/timescaledb:2.17.2-pg16
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -46,6 +47,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       DB_HOST: timescaledb
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        wget -qO- https://codeload.github.com/francoluumos/polymarket-bot/tar.gz/refs/heads/claude/polymarket-bot-vps-deploy-pn9dj4 | tar -xz -C /tmp
+        d=$$(ls -d /tmp/polymarket-bot-*)
+        MIGRATIONS_DIR="$$d/storage/migrations" exec /bin/sh "$$d/storage/migrate.sh"
     restart: "no"
 
   binance-collector:

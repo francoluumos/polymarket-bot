@@ -8,7 +8,7 @@
 #
 # Redeploy by pointing the Docker manager at the raw URL of this file.
 
-x-git-context: &git-context https://github.com/francoluumos/polymarket-bot.git#claude/polymarket-bot-vps-deploy-pn9dj4
+x-git-context: &git-context https://github.com/francoluumos/polymarket-bot.git#main
 
 services:
   timescaledb:
@@ -51,7 +51,7 @@ services:
     command:
       - |
         set -eu
-        wget -qO- https://codeload.github.com/francoluumos/polymarket-bot/tar.gz/refs/heads/claude/polymarket-bot-vps-deploy-pn9dj4 | tar -xz -C /tmp
+        wget -qO- https://codeload.github.com/francoluumos/polymarket-bot/tar.gz/refs/heads/main | tar -xz -C /tmp
         d=$$(ls -d /tmp/polymarket-bot-*)
         MIGRATIONS_DIR="$$d/storage/migrations" exec /bin/sh "$$d/storage/migrate.sh"
     restart: "no"

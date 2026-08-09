@@ -24,7 +24,9 @@ from collectors.common.ws import ReconnectingWS
 log = config.setup_logging("binance_orderbook")
 
 VENUE = "binance"
-WS_BASE = "wss://fstream.binance.com/stream?streams="
+# Binance routed endpoints (2026-04-23 migration): depth streams live under
+# /public; the legacy unrouted /stream path is formally decommissioned.
+WS_BASE = "wss://fstream.binance.com/public/stream?streams="
 
 SQL_SNAPSHOT = """
     INSERT INTO orderbook_snapshots (ts, venue, symbol, bids, asks)

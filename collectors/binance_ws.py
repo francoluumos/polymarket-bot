@@ -26,7 +26,10 @@ from collectors.common.ws import ReconnectingWS
 log = config.setup_logging("binance")
 
 VENUE = "binance"
-WS_BASE = "wss://fstream.binance.com/stream?streams="
+# Binance routed endpoints (2026-04-23 migration): aggTrade/forceOrder/markPrice
+# live under /market. Legacy unrouted /stream still accepts connections but
+# silently pushes no market-class data.
+WS_BASE = "wss://fstream.binance.com/market/stream?streams="
 REST_BASE = "https://fapi.binance.com"
 
 SQL_TRADE = """

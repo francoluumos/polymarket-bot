@@ -6,6 +6,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      # Cap timescaledb-tune so Postgres doesn't size itself to the whole
+      # VPS — it shares the box with other Docker workloads.
+      TS_TUNE_MEMORY: ${TS_TUNE_MEMORY:-2GB}
+      TS_TUNE_NUM_CPUS: ${TS_TUNE_NUM_CPUS:-2}
     volumes:
       - timescale_data:/var/lib/postgresql/data
     ports:

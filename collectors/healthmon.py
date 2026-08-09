@@ -4,7 +4,9 @@ Alerts on state transitions (collector died / recovered), re-alerts every
 REALERT_MINUTES while dead so a night-long outage can't be a single missed
 message. ALERT_WEBHOOK_URL takes any JSON-accepting webhook (n8n, Slack,
 Discord, ...); payload is {"text": ..., "dead": [...], "recovered": [...]}.
-Without a webhook configured it logs CRITICAL only — fine for local dev,
+Optionally also sends the alert text as an iMessage via Sendblue
+(SENDBLUE_API_KEY/SENDBLUE_API_SECRET/SENDBLUE_FROM_NUMBER/ALERT_IMESSAGE_TO).
+Without any channel configured it logs CRITICAL only — fine for local dev,
 not for the VPS.
 
 The monitor also heartbeats itself, so a dead monitor is at least visible
@@ -28,23 +30,50 @@ class HealthMonitor:
         self.pool = pool
         self.session = session
         self.webhook_url = config.env("ALERT_WEBHOOK_URL", "")
+        self.sendblue_key = config.env("SENDBLUE_API_KEY", "")
+        self.sendblue_secret = config.env("SENDBLUE_API_SECRET", "")
+        self.sendblue_from = config.env("SENDBLUE_FROM_NUMBER", "")
+        self.imessage_to = config.env("ALERT_IMESSAGE_TO", "")
         self.interval = float(config.env("HEALTH_CHECK_INTERVAL", "60"))
         self.realert = timedelta(minutes=float(config.env("REALERT_MINUTES", "30")))
         self.known_dead: dict[str, datetime] = {}  # collector -> last alerted at
 
+    @property
+    def imessage_configured(self) -> bool:
+        return bool(self.sendblue_key and self.sendblue_secret and self.imessage_to)
+
     async def send_alert(self, text: str, dead: list[dict], recovered: list[str]) -> None:
         log.critical(text)
-        if not self.webhook_url:
-            return
-        try:
-            async with self.session.post(self.webhook_url, json={
-                "text": text, "dead": dead, "recovered": recovered,
-                "source": "trading-research-healthmon",
-            }) as resp:
-                if resp.status >= 400:
-                    log.error("alert webhook returned %d", resp.status)
-        except Exception as e:
-            log.error("alert webhook failed: %s", e)
+        if self.webhook_url:
+            try:
+                async with self.session.post(self.webhook_url, json={
+                    "text": text, "dead": dead, "recovered": recovered,
+                    "source": "trading-research-healthmon",
+                }) as resp:
+                    if resp.status >= 400:
+                        log.error("alert webhook returned %d", resp.status)
+            except Exception as e:
+                log.error("alert webhook failed: %s", e)
+        if self.imessage_configured:
+            # Sendblue delivers iMessages via REST; from_number must be the
+            # Sendblue-provisioned line, not a personal number.
+            payload = {"number": self.imessage_to, "content": text}
+            if self.sendblue_from:
+                payload["from_number"] = self.sendblue_from
+            try:
+                async with self.session.post(
+                    "https://api.sendblue.com/api/send-message",
+                    json=payload,
+                    headers={
+                        "sb-api-key-id": self.sendblue_key,
+                        "sb-api-secret-key": self.sendblue_secret,
+                    },
+                ) as resp:
+                    if resp.status >= 400:
+                        body = await resp.text()
+                        log.error("sendblue alert returned %d: %s", resp.status, body[:300])
+            except Exception as e:
+                log.error("sendblue alert failed: %s", e)
 
     async def check(self) -> None:
         rows = await self.pool.fetch(
@@ -100,9 +129,15 @@ async def main() -> None:
     timeout = aiohttp.ClientTimeout(total=15)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         monitor = HealthMonitor(pool, session)
+        channels = [
+            name for name, on in [
+                ("webhook", bool(monitor.webhook_url)),
+                ("imessage", monitor.imessage_configured),
+            ] if on
+        ]
         log.info(
-            "health monitor started (webhook %s)",
-            "configured" if monitor.webhook_url else "NOT configured — log-only",
+            "health monitor started (alert channels: %s)",
+            ", ".join(channels) if channels else "NONE — log-only",
         )
         await monitor.run()
 

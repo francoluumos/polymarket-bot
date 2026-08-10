@@ -35,3 +35,34 @@ What doing it properly requires (in our pattern, not theirs):
 Useful references from the reviewed repo: Kalshi API auth (RSA request
 signing) in `backend/data/kalshi_client.py`; its `RESEARCH.md` platform/fee
 comparison; Open-Meteo ensemble endpoint usage in `backend/data/weather.py`.
+
+## Benchmark discipline for the Milestone 2 backtest library (committed requirement)
+
+Requested 2026-08-10: every strategy result must answer "why not just buy the
+benchmark?" before it can be considered for capital. Not a nice-to-have — a
+hard gate in the backtest report format.
+
+Every backtest reports, net of realistic fees + slippage:
+
+1. **Benchmarks**: S&P 500 total return (SPY) for the opportunity-cost
+   question, AND buy-and-hold BTC (and ETH) for crypto strategies — for a
+   crypto strat the damning comparison is usually holding BTC, not SPY.
+2. **Risk-adjusted, not raw**: Sharpe, Sortino, max drawdown, and a
+   vol-matched comparison (scale strategy exposure to benchmark volatility
+   before comparing returns — raw return comparisons flatter leveraged
+   strategies).
+3. **Multiple-testing honesty**: we will test many hypotheses; the best
+   backtest's Sharpe is inflated by selection. Report deflated Sharpe
+   (Bailey & López de Prado) or an equivalent reality check. This is the
+   discipline that separates us from prompt-evolution hype (see atlas-gic
+   review, 2026-08-10: 54 mutations, keep-the-lucky-ones, −5.9% result).
+4. **The verdict line**: each report ends with an explicit call — "this
+   beats/loses to its benchmarks risk-adjusted." If nothing beats SPY/BTC
+   buy-and-hold, the correct trade IS the benchmark, and the research
+   still succeeded by preventing losses.
+
+Benchmark data: daily SPY/BTC closes suffice (free sources fine at daily
+granularity); no new collectors needed — pull at research time in notebooks.
+
+Later, if/when live: daily equity snapshots vs benchmarks on the dashboard
+(the M1 "no frontend" rule still applies until then).
